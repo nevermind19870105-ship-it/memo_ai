@@ -303,6 +303,103 @@ select[multiple].prop-input:hover {
     z-index: 10;
 }
 
+/* ===== Debug Panel ===== */
+.debug-panel {
+    background: #2a2a2a;
+    border: 2px solid #ff6b6b;
+    border-radius: 8px;
+    margin: 20px;
+    padding: 15px;
+    font-family: 'Courier New', monospace;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.debug-panel.hidden {
+    display: none;
+}
+
+.debug-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    color: #ff6b6b;
+}
+
+.debug-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.toggle-debug-btn {
+    background: #ff6b6b;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.toggle-debug-btn:hover {
+    background: #ff5252;
+}
+
+.debug-content {
+    background: #1a1a1a;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #ddd;
+}
+
+.debug-content pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.debug-section {
+    margin-bottom: 15px;
+}
+
+.debug-section h4 {
+    color: #4fc3f7;
+    margin: 5px 0;
+    font-size: 14px;
+}
+
+.debug-item {
+    padding: 5px 0;
+    border-bottom: 1px solid #333;
+}
+
+.debug-key {
+    color: #81c784;
+    font-weight: bold;
+}
+
+.debug-value {
+    color: #fff;
+    margin-left: 10px;
+}
+
+.debug-true {
+    color: #81c784;
+}
+
+.debug-false {
+    color: #e57373;
+}
+
+.loading-debug {
+    text-align: center;
+    padding: 20px;
+    color: #999;
+}
+
 /* ===== INPUT AREA - LINE STYLE ===== */
 .input-area {
     padding: 10px 15px 15px;
