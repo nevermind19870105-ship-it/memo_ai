@@ -1,19 +1,5 @@
 {
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/$1"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/index.html"
-    }
-  ]
+  "buildCommand": "cp -r public/* . && echo 'Static files copied to root'",
+  "cleanUrls": true,
+  "trailingSlash": false
 }
