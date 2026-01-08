@@ -32,6 +32,29 @@ APP_CONFIG = {"config_db_id": None}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import socket
+    
+    # Diagnostic logging
+    print("=" * 60)
+    print("🚀 Application Starting")
+    print("=" * 60)
+    print(f"VERCEL environment: {os.environ.get('VERCEL', 'not set')}")
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Python version: {os.sys.version}")
+    
+    # Check for static files
+    static_paths = ["public", ".vercel/output/static", "/var/task/public"]
+    for path in static_paths:
+        exists = os.path.exists(path)
+        print(f"Static path '{path}' exists: {exists}")
+        if exists and os.path.isdir(path):
+            try:
+                files = os.listdir(path)
+                print(f"  → Files in '{path}': {files[:5]}")  # First 5 files
+            except Exception as e:
+                print(f"  → Error listing '{path}': {e}")
+    
+    print("=" * 60)
+    
     try:
         # Get local IP
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -725,4 +748,7 @@ async def get_database_content(database_id: str):
 # We mount this LAST so that any defined routes (like /api/*) take precedence.
 # Only mount static files in local development, not on Vercel
 if not os.environ.get("VERCEL"):
+    print("💾 Mounting static files from 'public/' directory (local mode)")
     app.mount("/", StaticFiles(directory="public", html=True), name="static")
+else:
+    print("☁️  Skipping static file mount (Vercel mode - using Build Output API)")

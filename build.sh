@@ -8,6 +8,7 @@ echo "========================================="
 # 1. Clean previous build
 echo "→ Cleaning previous build..."
 rm -rf .vercel/output/static
+rm -rf .vercel/output/config.json
 
 # 2. Create output directory
 echo "→ Creating output directory..."
@@ -17,9 +18,28 @@ mkdir -p .vercel/output/static
 echo "→ Copying static files from public/ to .vercel/output/static/..."
 cp -rv public/* .vercel/output/static/
 
-# 4. Verify
+# 4. Create Build Output API v3 config
+echo "→ Creating Build Output API v3 config.json..."
+cat > .vercel/output/config.json << 'EOF'
+{
+  "version": 3,
+  "routes": [
+    {
+      "src": "/api/.*",
+      "dest": "/api/index.py"
+    },
+    {
+      "handle": "filesystem"
+    }
+  ]
+}
+EOF
+
+# 5. Verify
 echo "→ Verifying static files..."
 ls -lah .vercel/output/static/
+echo "→ Verifying config.json..."
+cat .vercel/output/config.json
 
 echo "========================================="
 echo "✅ Build completed successfully!"
