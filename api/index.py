@@ -158,86 +158,12 @@ def health_check():
     return {"status": "ok"}
 
 
-@app.get("/api/debug")
-async def debug_info():
-    """
-    Detailed debug information for troubleshooting Vercel deployment.
-    Shows environment, file system state, routing decisions, etc.
-    """
-    import platform
-    import glob
-    
-    debug_data = {
-        "timestamp": get_current_jst_str(),
-        "environment": {
-            "VERCEL": os.environ.get("VERCEL", "not set"),
-            "VERCEL_ENV": os.environ.get("VERCEL_ENV", "not set"),
-            "VERCEL_REGION": os.environ.get("VERCEL_REGION", "not set"),
-            "VERCEL_URL": os.environ.get("VERCEL_URL", "not set"),
-            "PYTHON_VERSION": platform.python_version(),
-            "PLATFORM": platform.platform(),
-        },
-        "paths": {
-            "cwd": os.getcwd(),
-            "script_location": __file__,
-            "sys_path": os.sys.path[:5],  # First 5 entries
-        },
-        "filesystem_checks": {},
-        "static_file_mount": "Disabled on Vercel" if os.environ.get("VERCEL") else "Enabled locally",
-        "app_routes": []
-    }
-    
-    # Check various potential static file locations
-    check_paths = [
-        "public",
-        "public/index.html",
-        "public/script.js",
-        "public/style.css",
-        ".vercel/output/static",
-        ".vercel/output/static/index.html",
-        ".vercel/output/config.json",
-        "/var/task/public",
-        "/var/task/public/index.html",
-        "index.html",
-        "script.js",
-        "style.css",
-    ]
-    
-    for path in check_paths:
-        abs_path = os.path.abspath(path)
-        exists = os.path.exists(path)
-        debug_data["filesystem_checks"][path] = {
-            "exists": exists,
-            "absolute_path": abs_path,
-            "is_file": os.path.isfile(path) if exists else None,
-            "is_dir": os.path.isdir(path) if exists else None,
-            "size": os.path.getsize(path) if exists and os.path.isfile(path) else None,
-        }
-        
-        # If directory, list contents
-        if exists and os.path.isdir(path):
-            try:
-                contents = os.listdir(path)
-                debug_data["filesystem_checks"][path]["contents"] = contents[:10]  # First 10 items
-            except Exception as e:
-                debug_data["filesystem_checks"][path]["list_error"] = str(e)
-    
-    # List all files in current directory
-    try:
-        debug_data["cwd_contents"] = os.listdir(os.getcwd())[:20]  # First 20 items
-    except Exception as e:
-        debug_data["cwd_contents"] = f"Error: {e}"
-    
-    # Show registered routes
-    for route in app.routes:
-        route_info = {
-            "path": getattr(route, "path", "unknown"),
-            "name": getattr(route, "name", "unknown"),
-            "methods": list(getattr(route, "methods", []))
-        }
-        debug_data["app_routes"].append(route_info)
-    
-    return debug_data
+# Debug endpoint removed for production
+# Uncomment if needed for troubleshooting
+# @app.get("/api/debug")
+# async def debug_info():
+#     ...
+
 
 @app.get("/api/config")
 async def get_config():
