@@ -1,6 +1,6 @@
 import os
 import asyncio
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -29,6 +29,9 @@ from api.ai import analyze_text_with_ai, chat_analyze_text_with_ai
 from api.models import get_available_models, get_text_models, get_vision_models
 # アプリケーションのデフォルト設定
 from api.config import DEFAULT_TEXT_MODEL, DEFAULT_MULTIMODAL_MODEL
+# レート制限
+from api.rate_limiter import rate_limiter
+
 
 
 # 環境変数の読み込み
@@ -368,15 +371,24 @@ async def get_config():
     
     NotionのConfigデータベースから、アプリの設定（プロンプト一覧など）を取得します。
     """
+    # DEBUG_MODE状態を取得
+    debug_mode = os.environ.get("DEBUG_MODE", "false").lower() == "true"
+    
     config_db_id = APP_CONFIG["config_db_id"] or os.environ.get("NOTION_CONFIG_DB_ID")
     
     if not config_db_id:
-        # セットアップが完了していない、または環境変数が未設定の場合の処置
-        # ユーザーに設定DBのIDがないことを伝えます。
-        raise HTTPException(status_code=500, detail="Configuration Database ID not found (Setup failed?)")
+        # 設定DBがない場合でもdebug_modeは返す
+        return {
+            "configs": [],
+            "debug_mode": debug_mode
+        }
     
     configs = await fetch_config_db(config_db_id)
-    return {"configs": configs}
+    
+    return {
+        "configs": configs,
+        "debug_mode": debug_mode
+    }
 
 @app.get("/api/models")
 async def get_models():
@@ -404,13 +416,15 @@ async def get_models():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/targets")
-async def get_targets():
+async def get_targets(request: Request):
     """
     操作対象（Notionページ/データベース）一覧の取得
     
     ルートページ直下にあるページやデータベース、およびリンクされているページを取得します。
     これらはユーザーがメモの保存先やチャットのコンテキストとして選択する候補となります。
     """
+    # レート制限チェック（緩め）
+    await rate_limiter.check_rate_limit(request, endpoint="targets", custom_limit=30)
     root_id = os.environ.get("NOTION_ROOT_PAGE_ID")
     if not root_id:
         raise HTTPException(status_code=500, detail="❌ NOTION_ROOT_PAGE_ID が設定されていません。.envファイルに NOTION_ROOT_PAGE_ID=your_page_id を追加してください。")
@@ -484,13 +498,15 @@ async def get_targets():
     return {"targets": targets}
 
 @app.get("/api/schema/{target_id}")
-async def get_schema(target_id: str):
+async def get_schema(target_id: str, request: Request):
     """
     対象（DBまたはページ）のスキーマ情報の取得
     
     ページの場合は単純な構造を返し、データベースの場合は各プロパティ（列）の定義を返します。
     エラーハンドリングを強化しており、DBとしてもページとしても取得できなかった場合に詳細なエラーを返します。
     """
+    # レート制限チェック（緩め）
+    await rate_limiter.check_rate_limit(request, endpoint="schema", custom_limit=30)
     db_error = None
     page_error = None
     
@@ -547,14 +563,21 @@ async def get_schema(target_id: str):
 
 
 @app.post("/api/analyze")
-async def analyze(request: AnalyzeRequest):
+async def analyze(request: Request, analyze_req: AnalyzeRequest):
     """
     テキスト分析API (AIによるタスク抽出)
     
     Notionのデータベース構造（スキーマ）と既存のデータを参照し、
     ユーザーのテキスト入力からデータベースに登録するための適切なプロパティ値をAIに推定させます。
     """
-    target_db_id = request.target_db_id
+    # レート制限チェック
+    rate_limit_headers = await rate_limiter.check_rate_limit(
+        request,
+        endpoint="analyze",
+        custom_limit=10
+    )
+    
+    target_db_id = analyze_req.target_db_id
     
     # 1. データベース情報の並行取得
     # VercelのFunction Timeout (10秒や60秒) を考慮し、重いNotion API呼び出しを並列化して時間を短縮します。
@@ -599,14 +622,19 @@ async def analyze(request: AnalyzeRequest):
     try:
         # Gemini等のLLMを呼び出し、JSON形式でのレスポンスを期待します。
         result = await analyze_text_with_ai(
-            text=request.text,
+            text=analyze_req.text,
             schema=schema,
             recent_examples=recent_examples,
             system_prompt=system_prompt,
-            model=request.model
+            model=analyze_req.model
         )
         # 結果にはAIの回答だけでなく、トークン消費量やコスト情報も含まれる場合があります。
-        return result
+        # レスポンスにレート制限ヘッダーを追加
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content=result,
+            headers=rate_limit_headers
+        )
     except httpx.ReadTimeout:
         # Notion APIやAI APIのタイムアウト処理
         raise HTTPException(
@@ -637,25 +665,32 @@ async def analyze(request: AnalyzeRequest):
         )
 
 @app.post("/api/chat")
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: Request, chat_req: ChatRequest):
     """
     チャットAIエンドポイント (対話機能)
     
     特定のNotionページやデータベースをコンテキストとして、AIと会話を行います。
     画像入力や履歴を踏まえた回答が可能です。
     """
-    print(f"[Chat] Request received for target: {request.target_id}")
-    print(f"[Chat] Has image: {bool(request.image_data)}")
-    print(f"[Chat] Text length: {len(request.text) if request.text else 0}")
+    # レート制限チェック
+    rate_limit_headers = await rate_limiter.check_rate_limit(
+        request, 
+        endpoint="chat", 
+        custom_limit=10
+    )
+    
+    print(f"[Chat] Request received for target: {chat_req.target_id}")
+    print(f"[Chat] Has image: {bool(chat_req.image_data)}")
+    print(f"[Chat] Text length: {len(chat_req.text) if chat_req.text else 0}")
     
     try:
-        target_id = request.target_id
+        target_id = chat_req.target_id
         
         # コンテキスト情報の取得 (スキーマやタイトル)
         # これにより、AIは「今どのページについて話しているか」を理解できます。
         print(f"[Chat] Fetching schema for target: {target_id}")
         try:
-            schema_result = await get_schema(target_id)
+            schema_result = await get_schema(target_id, request)
             schema = schema_result.get("schema", {})
             target_type = schema_result.get("type", "database")
             print(f"[Chat] Schema fetched, type: {target_type}, properties: {len(schema)}")
@@ -675,7 +710,7 @@ async def chat_endpoint(request: ChatRequest):
             )
         
         # システムプロンプトの設定
-        system_prompt = request.system_prompt
+        system_prompt = chat_req.system_prompt
         if not system_prompt:
              # デフォルトのペルソナ（秘書）設定
              # Note: このプロンプトは public/script.js の DEFAULT_SYSTEM_PROMPT と同じ内容です
@@ -692,27 +727,32 @@ async def chat_endpoint(request: ChatRequest):
         
         # セッション履歴の構築
         # フロントエンドから渡された会話履歴に、参照コンテキスト（ページ本文など）をシステムメッセージとして追加します。
-        session_history = request.session_history or []
-        if request.reference_context:
+        session_history = chat_req.session_history or []
+        if chat_req.reference_context:
             session_history = [
-                {"role": "system", "content": request.reference_context}
+                {"role": "system", "content": chat_req.reference_context}
             ] + session_history
         
         # AI実行 (チャットモード)
         # 画像が含まれるかどうかは内部で自動判別され、対応するモデルが選択されます。
-        print(f"[Chat] Calling AI with model: {request.model or 'auto'}")
+        print(f"[Chat] Calling AI with model: {chat_req.model or 'auto'}")
         try:
             result = await chat_analyze_text_with_ai(
-                text=request.text,
+                text=chat_req.text,
                 schema=schema,
                 system_prompt=system_prompt,
                 session_history=session_history,
-                image_data=request.image_data,
-                image_mime_type=request.image_mime_type,
-                model=request.model
+                image_data=chat_req.image_data,
+                image_mime_type=chat_req.image_mime_type,
+                model=chat_req.model
             )
             print(f"[Chat] AI response received, model used: {result.get('model')}")
-            return result
+            # レスポンスにレート制限ヘッダーを追加
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                content=result,
+                headers=rate_limit_headers
+            )
         except httpx.ReadTimeout:
             raise HTTPException(
                 status_code=504,
