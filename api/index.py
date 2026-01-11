@@ -152,42 +152,28 @@ app = FastAPI(lifespan=lifespan)
 # --- CORS (Cross-Origin Resource Sharing) 設定 ---
 # 異なるオリジン（ドメイン、ポート）からのリクエストを許可するための設定です。
 #
-# 設定方法:
-#   1. ローカル開発: 自動で "*" (全許可)
-#   2. Vercel環境: 自動で全デプロイメントを許可 (https://*.vercel.app)
-#   3. 他のプラットフォーム: 環境変数 ALLOWED_ORIGINS を設定
-#      例: ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+# デフォルト動作（初心者向け）:
+#   - 全ての環境で自動的に全オリジンを許可 ("*")
+#   - 環境変数の設定は不要です
 #
-# ALLOWED_ORIGINS環境変数で明示的に指定すると、どの環境でも上書きされます。
+# セキュリティを強化したい場合（任意）:
+#   環境変数 ALLOWED_ORIGINS を設定
+#   例: ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
 
 allowed_origins_str = os.environ.get("ALLOWED_ORIGINS")
-is_vercel = bool(os.environ.get("VERCEL"))
 
 if allowed_origins_str:
-    # 明示的に指定された場合（全てのプラットフォームで使用可能）
+    # セキュリティ強化: 明示的に許可するオリジンを指定
     allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
-    allow_origin_regex = None
-    print(f"🔐 [CORS] Custom origins: {', '.join(allowed_origins)}")
-elif is_vercel:
-    # Vercel環境では正規表現で全デプロイメントを自動許可
-    # 本番デプロイ + プレビューデプロイを全て許可
-    allowed_origins = []
-    allow_origin_regex = r"https://.*\.vercel\.app"
-    print(f"🔐 [CORS] Vercel mode: allowing all *.vercel.app deployments")
+    print(f"🔐 [CORS] Restricted mode: {', '.join(allowed_origins)}")
 else:
-    # ローカル開発環境では全許可
+    # デフォルト: 全許可（初心者向け・開発向け）
     allowed_origins = ["*"]
-    allow_origin_regex = None
-    # 本番環境の可能性がある場合は警告
-    if os.environ.get("PORT") or os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RENDER"):
-        print("⚠️  [CORS] Warning: Running in production without ALLOWED_ORIGINS set. Consider setting ALLOWED_ORIGINS environment variable.")
-    else:
-        print(f"🔐 [CORS] Development mode: allowing all origins")
+    print(f"🌍 [CORS] Development mode: allowing all origins (*)")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
